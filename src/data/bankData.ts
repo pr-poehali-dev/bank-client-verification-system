@@ -103,6 +103,14 @@ export const EMPLOYEES: Employee[] = [
     password: '2014',
     windowNumber: 3,
   },
+  {
+    id: 'Тимофей11',
+    name: 'Тимофей11',
+    role: 'Операционист',
+    roleKey: 'cashier',
+    password: '0000',
+    windowNumber: 4,
+  },
 ];
 
 export const INITIAL_CLIENTS: Client[] = [
