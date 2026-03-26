@@ -106,8 +106,8 @@ export const EMPLOYEES: Employee[] = [
   {
     id: 'Тимофей11',
     name: 'Тимофей11',
-    role: 'Операционист',
-    roleKey: 'cashier',
+    role: 'Старший операционист',
+    roleKey: 'senior_cashier',
     password: '0000',
     windowNumber: 4,
   },
