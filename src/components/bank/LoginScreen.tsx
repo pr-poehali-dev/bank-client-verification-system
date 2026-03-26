@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { EMPLOYEES, Employee } from '@/data/bankData';
+import { Employee } from '@/data/bankData';
 import Icon from '@/components/ui/icon';
+import { api } from '@/lib/api';
 
 interface LoginScreenProps {
   onLogin: (employee: Employee) => void;
@@ -24,19 +25,11 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
     setTimeout(() => setShake(false), 600);
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setError('');
-    const emp = EMPLOYEES.find(
-      e => e.id.toLowerCase() === identifier.trim().toLowerCase() && e.password === password.trim()
-    );
-    if (!emp) {
-      setError('Неверный идентификатор или пароль');
-      triggerShake();
-      return;
-    }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const emp = await api.login(identifier.trim(), password.trim()) as Employee;
       const code = String(Math.floor(1000 + Math.random() * 9000));
       setSmsCode(code);
       setPendingEmployee(emp);
@@ -48,7 +41,12 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         if (t <= 0) clearInterval(timer);
       }, 1000);
       alert(`[ДЕМО] SMS-код для ${emp.name}: ${code}`);
-    }, 1200);
+    } catch {
+      setError('Неверный идентификатор или пароль');
+      triggerShake();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSmsVerify = () => {

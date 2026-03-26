@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import LoginScreen from '@/components/bank/LoginScreen';
 import Sidebar from '@/components/bank/Sidebar';
 import Dashboard from '@/components/bank/Dashboard';
@@ -13,17 +13,44 @@ import CreditsPanel from '@/components/bank/CreditsPanel';
 import Icon from '@/components/ui/icon';
 import {
   Employee, Client, Account, Transaction, QueueItem, Credit,
-  INITIAL_CLIENTS, INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, INITIAL_QUEUE, INITIAL_CREDITS,
 } from '@/data/bankData';
+import { api } from '@/lib/api';
 
 export default function Index() {
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
-  const [accounts, setAccounts] = useState<Account[]>(INITIAL_ACCOUNTS);
-  const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
-  const [queue, setQueue] = useState<QueueItem[]>(INITIAL_QUEUE);
-  const [credits, setCredits] = useState<Credit[]>(INITIAL_CREDITS);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [queue, setQueueState] = useState<QueueItem[]>([]);
+  const [credits, setCredits] = useState<Credit[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [cls, accs, txns, q, crds] = await Promise.all([
+        api.getClients(),
+        api.getAccounts(),
+        api.getTransactions(),
+        api.getQueue(),
+        api.getCredits(),
+      ]);
+      setClients(cls);
+      setAccounts(accs);
+      setTransactions(txns);
+      setQueueState(q);
+      setCredits(crds);
+    } catch (e) {
+      console.error('Ошибка загрузки:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (employee) loadAll();
+  }, [employee, loadAll]);
 
   const handleLogin = useCallback((emp: Employee) => {
     setEmployee(emp);
@@ -32,34 +59,74 @@ export default function Index() {
 
   const handleLogout = useCallback(() => {
     setEmployee(null);
+    setClients([]); setAccounts([]); setTransactions([]); setQueueState([]); setCredits([]);
   }, []);
 
-  const addTransaction = useCallback((txn: Transaction) => {
+  const addTransaction = useCallback(async (txn: Transaction) => {
+    try { await api.createTransaction(txn); } catch (e) { console.error(e); }
     setTransactions(prev => [...prev, txn]);
   }, []);
 
-  const addClient = useCallback((client: Client) => {
+  const addClient = useCallback(async (client: Client) => {
+    try {
+      const res = await api.createClient(client) as { id: string };
+      client = { ...client, id: res.id || client.id };
+    } catch (e) { console.error(e); }
     setClients(prev => [...prev, client]);
   }, []);
 
-  const updateClient = useCallback((client: Client) => {
+  const updateClient = useCallback(async (client: Client) => {
+    try { await api.updateClient(client.id, client); } catch (e) { console.error(e); }
     setClients(prev => prev.map(c => c.id === client.id ? client : c));
   }, []);
 
-  const addAccount = useCallback((acc: Account) => {
+  const addAccount = useCallback(async (acc: Account) => {
+    try { await api.createAccount(acc); } catch (e) { console.error(e); }
     setAccounts(prev => [...prev, acc]);
   }, []);
 
-  const updateAccount = useCallback((acc: Account) => {
+  const updateAccount = useCallback(async (acc: Account) => {
+    try { await api.updateAccount(acc.id, acc); } catch (e) { console.error(e); }
     setAccounts(prev => prev.map(a => a.id === acc.id ? acc : a));
   }, []);
 
-  const addCredit = useCallback((credit: Credit) => {
+  const addCredit = useCallback(async (credit: Credit) => {
+    try { await api.createCredit(credit); } catch (e) { console.error(e); }
     setCredits(prev => [...prev, credit]);
   }, []);
 
+  const setQueue = useCallback(async (newQueue: QueueItem[]) => {
+    const oldQueue = queue;
+    setQueueState(newQueue);
+    const added = newQueue.filter(nq => !oldQueue.find(oq => oq.id === nq.id));
+    const changed = newQueue.filter(nq => {
+      const old = oldQueue.find(oq => oq.id === nq.id);
+      return old && old.status !== nq.status;
+    });
+    for (const item of added) {
+      try { await api.createQueueItem(item); } catch (e) { console.error(e); }
+    }
+    for (const item of changed) {
+      try { await api.updateQueueItem(item.id, { status: item.status, windowNumber: item.windowNumber }); } catch (e) { console.error(e); }
+    }
+  }, [queue]);
+
   if (!employee) {
     return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background grid-bg">
+        <div className="text-center">
+          <div className="w-14 h-14 rounded-2xl bg-[var(--neon-dim)] border border-[rgba(0,230,118,0.3)] flex items-center justify-center mx-auto mb-4">
+            <Icon name="Loader2" size={28} className="text-[var(--neon)] animate-spin" />
+          </div>
+          <div className="font-mono-bank text-sm text-[var(--neon)] tracking-widest">ЗАГРУЗКА ДАННЫХ...</div>
+          <div className="font-mono-bank text-[10px] text-white/25 mt-1 tracking-wider">Синхронизация с базой данных</div>
+        </div>
+      </div>
+    );
   }
 
   const waitingCount = queue.filter(q => q.status === 'waiting').length;
@@ -97,12 +164,13 @@ export default function Index() {
             <span className="font-mono-bank text-xs text-white/40 tracking-wider">{pageTitle[currentPage] || currentPage}</span>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={loadAll} className="flex items-center gap-1.5 hover:opacity-70 transition-opacity">
+              <Icon name="RefreshCw" size={11} className="text-[var(--neon)] opacity-50" />
+              <span className="font-mono-bank text-[9px] text-white/25 tracking-widest">ОБНОВИТЬ</span>
+            </button>
             <div className="flex items-center gap-1.5">
               <span className="status-dot" style={{ width: 6, height: 6 }} />
-              <span className="font-mono-bank text-[9px] text-white/25 tracking-widest">СИСТЕМА ОНЛАЙН</span>
-            </div>
-            <div className="font-mono-bank text-[9px] text-white/20">
-              {new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              <span className="font-mono-bank text-[9px] text-white/25 tracking-widest">БД ПОДКЛЮЧЕНА</span>
             </div>
             <div className="flex items-center gap-1">
               <Icon name="Shield" size={10} className="text-[var(--neon)] opacity-40" />
